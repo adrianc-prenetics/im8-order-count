@@ -14,7 +14,7 @@
   "description": "",
   "private": "true",
   "engines": {
-    "node": ">=18"
+    "node": "18.x"
   },
   "dependencies": {
     "@shopify/admin-api-client": "^1.1.1"
