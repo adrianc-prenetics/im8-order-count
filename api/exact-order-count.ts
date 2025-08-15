@@ -69,6 +69,10 @@ export default async function handler(req: any, res: any) {
 			if (!force && ageMinutes <= maxAgeMinutes) {
 				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
 				console.log('[exact-order-count] status=COMPLETED source=currentBulkOperation exactOrders=' + exact + ' ageMinutes=' + ageMinutes.toFixed(2));
+				res.setHeader('X-Exact-Status', 'COMPLETED');
+				res.setHeader('X-Exact-Orders', String(exact));
+				res.setHeader('X-Exact-Source', 'currentBulkOperation');
+				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
 				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
 			}
 		}
@@ -78,6 +82,10 @@ export default async function handler(req: any, res: any) {
 			const ageMinutes = (Date.now() - new Date(lastCompletedCache.completedAt).getTime()) / 60000;
 			if (!force && ageMinutes <= maxAgeMinutes) {
 				console.log('[exact-order-count] status=COMPLETED source=memory-cache exactOrders=' + lastCompletedCache.exactOrders + ' ageMinutes=' + ageMinutes.toFixed(2));
+				res.setHeader('X-Exact-Status', 'COMPLETED');
+				res.setHeader('X-Exact-Orders', String(lastCompletedCache.exactOrders));
+				res.setHeader('X-Exact-Source', 'memory-cache');
+				res.setHeader('Server-Timing', `exact;desc="${lastCompletedCache.exactOrders}"`);
 				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, completedAt: lastCompletedCache.completedAt, ageMinutes });
 			}
 		}
@@ -119,6 +127,11 @@ export default async function handler(req: any, res: any) {
 		if (!shouldWait) {
 			const oc = op?.objectCount ? Number(op.objectCount) : undefined;
 			console.log('[exact-order-count] immediate status=' + (op?.status || 'UNKNOWN') + (oc !== undefined ? ' objectCount=' + oc : ''));
+			if (oc !== undefined) {
+				res.setHeader('X-Exact-Orders', String(oc));
+				res.setHeader('X-Exact-Status', op?.status || 'UNKNOWN');
+				res.setHeader('X-Exact-Source', 'currentBulkOperation');
+			}
 			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc });
 		}
 
@@ -132,6 +145,10 @@ export default async function handler(req: any, res: any) {
 				const exact = Number(op.objectCount || 0);
 				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
 				console.log('[exact-order-count] status=COMPLETED source=poll exactOrders=' + exact);
+				res.setHeader('X-Exact-Status', 'COMPLETED');
+				res.setHeader('X-Exact-Orders', String(exact));
+				res.setHeader('X-Exact-Source', 'poll');
+				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
 				return res.status(200).json({ status: op.status, exactOrders: exact });
 			}
 			if (op && (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED')) {
