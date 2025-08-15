@@ -18,6 +18,8 @@ A minimal serverless endpoint that returns the total number of customer purchase
   - `wait=1` to wait for completion (default 0)
   - `timeoutMs=30000` max 30000
   - `query=` optional Admin search syntax filter
+  - `maxAgeMinutes=60` reuse last completed bulk result if newer than this
+  - `force=1` ignore cache and start a new bulk operation
 - Response (wait=1 and completed):
   - `{ status: "COMPLETED", exactOrders: number }`
   - otherwise: `{ status, objectCount? }` while running

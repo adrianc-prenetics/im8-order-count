@@ -27,6 +27,8 @@ export default async function handler(req: any, res: any) {
 	const queryFilter = typeof req?.query?.query === 'string' ? req.query.query : undefined;
 	const shouldWait = String(req?.query?.wait || '0') === '1';
 	const maxWaitMs = Math.min(parseInt(String(req?.query?.timeoutMs || '18000'), 10) || 18000, 30000);
+	const force = String(req?.query?.force || '0') === '1';
+	const maxAgeMinutes = Math.min(parseInt(String(req?.query?.maxAgeMinutes || '60'), 10) || 60, 1440);
 
 	try {
 		const CURRENT = `query { currentBulkOperation { id status type objectCount url partialDataUrl createdAt } }`;
@@ -47,7 +49,24 @@ export default async function handler(req: any, res: any) {
 		let { data } = await client.request(CURRENT);
 		let op = data?.currentBulkOperation;
 
-		if (!op || op.status === 'CANCELED' || op.status === 'FAILED' || op.status === 'EXPIRED' || op.status === 'IDLE') {
+		// If we have a completed operation and it's fresh enough, return immediately
+		if (op && op.status === 'COMPLETED') {
+			const createdAt = new Date(op.createdAt);
+			const ageMinutes = (Date.now() - createdAt.getTime()) / 60000;
+			const exact = Number(op.objectCount || 0);
+			if (!force && ageMinutes <= maxAgeMinutes) {
+				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
+			}
+		}
+
+		if (
+			!op ||
+			op.status === 'CANCELED' ||
+			op.status === 'FAILED' ||
+			op.status === 'EXPIRED' ||
+			op.status === 'IDLE' ||
+			(op.status === 'COMPLETED' && force)
+		) {
 			// Start a new bulk op that emits one line per order id
 			const started = await client.request(startBulkQuery);
 			const errs = started?.bulkOperationRunQuery?.userErrors;
