@@ -39,17 +39,30 @@ export default async function handler(req: any, res: any) {
 		`;
 		const { data } = await client.request(graphQuery, { variables: { query: queryFilter } });
 		res.status(200).json({ totalOrders: data.ordersCount.count, precision: data.ordersCount.precision });
-	} catch (err) {
+	} catch (err: any) {
+		// Log detailed error on server side only
+		console.error('GraphQL ordersCount failed', err);
 		// Deprecated REST fallback as a last resort
 		try {
-			const r = await fetch(`https://${storeDomain}/admin/api/2025-07/orders/count.json`, {
+			const url = `https://${storeDomain}/admin/api/2025-07/orders/count.json`;
+			const r = await fetch(url, {
 				headers: { 'X-Shopify-Access-Token': accessToken! },
 			});
-			if (!r.ok) throw new Error('REST fallback failed');
+			if (!r.ok) {
+				const body = await r.text();
+				return res.status(r.status).json({
+					error: 'REST fallback failed',
+					status: r.status,
+					statusText: r.statusText,
+					url,
+					bodySnippet: body.slice(0, 300),
+				});
+			}
 			const json = await r.json();
-			res.status(200).json({ totalOrders: json.count });
-		} catch {
-			res.status(500).json({ error: 'Failed to fetch order count' });
+			return res.status(200).json({ totalOrders: json.count });
+		} catch (restErr: any) {
+			console.error('REST orders/count failed', restErr);
+			res.status(500).json({ error: 'Failed to fetch order count', detail: String(err?.message || err) });
 		}
 	}
 }
