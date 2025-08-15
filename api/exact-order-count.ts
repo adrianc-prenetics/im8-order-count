@@ -72,6 +72,7 @@ export default async function handler(req: any, res: any) {
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(exact));
 				res.setHeader('X-Exact-Source', 'currentBulkOperation');
+				res.setHeader('X-Exact-Completed-At', op.createdAt);
 				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
 				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
 			}
@@ -85,6 +86,7 @@ export default async function handler(req: any, res: any) {
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(lastCompletedCache.exactOrders));
 				res.setHeader('X-Exact-Source', 'memory-cache');
+				res.setHeader('X-Exact-Completed-At', lastCompletedCache.completedAt);
 				res.setHeader('Server-Timing', `exact;desc="${lastCompletedCache.exactOrders}"`);
 				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, completedAt: lastCompletedCache.completedAt, ageMinutes });
 			}
@@ -131,8 +133,11 @@ export default async function handler(req: any, res: any) {
 				res.setHeader('X-Exact-Orders', String(oc));
 				res.setHeader('X-Exact-Status', op?.status || 'UNKNOWN');
 				res.setHeader('X-Exact-Source', 'currentBulkOperation');
+				if (op?.status === 'COMPLETED' && op?.createdAt) {
+					res.setHeader('X-Exact-Completed-At', op.createdAt);
+				}
 			}
-			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc });
+			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc, completedAt: op?.createdAt });
 		}
 
 		// Poll for completion within timeout
@@ -148,8 +153,9 @@ export default async function handler(req: any, res: any) {
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(exact));
 				res.setHeader('X-Exact-Source', 'poll');
+				res.setHeader('X-Exact-Completed-At', op.createdAt);
 				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
-				return res.status(200).json({ status: op.status, exactOrders: exact });
+				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt });
 			}
 			if (op && (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED')) {
 				return res.status(500).json({ status: op.status, error: 'Bulk operation did not complete successfully' });
