@@ -110,7 +110,7 @@ export default async function handler(req: any, res: any) {
 			if (!startInFlight) {
 				startInFlight = (async () => {
 					const started = await client.request(startBulkQuery);
-					const errs = started?.bulkOperationRunQuery?.userErrors;
+					const errs = (started as any)?.data?.bulkOperationRunQuery?.userErrors;
 					if (errs && errs.length) {
 						throw new Error('Bulk start failed: ' + JSON.stringify(errs));
 					}
