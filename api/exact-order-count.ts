@@ -68,6 +68,7 @@ export default async function handler(req: any, res: any) {
 			const exact = Number(op.objectCount || 0);
 			if (!force && ageMinutes <= maxAgeMinutes) {
 				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
+				console.log('[exact-order-count] status=COMPLETED source=currentBulkOperation exactOrders=' + exact + ' ageMinutes=' + ageMinutes.toFixed(2));
 				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
 			}
 		}
@@ -76,6 +77,7 @@ export default async function handler(req: any, res: any) {
 		if (lastCompletedCache) {
 			const ageMinutes = (Date.now() - new Date(lastCompletedCache.completedAt).getTime()) / 60000;
 			if (!force && ageMinutes <= maxAgeMinutes) {
+				console.log('[exact-order-count] status=COMPLETED source=memory-cache exactOrders=' + lastCompletedCache.exactOrders + ' ageMinutes=' + ageMinutes.toFixed(2));
 				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, completedAt: lastCompletedCache.completedAt, ageMinutes });
 			}
 		}
@@ -91,6 +93,7 @@ export default async function handler(req: any, res: any) {
 		) {
 			if (!force && tooSoonToStart) {
 				// Avoid starting again too soon; return current status
+				console.log('[exact-order-count] start-suppressed status=' + (op?.status || 'PENDING'));
 				return res.status(202).json({ status: op?.status || 'PENDING', message: 'Start suppressed to protect rate limits; try again shortly.' });
 			}
 			// Start a new bulk op that emits one line per order id, de-duped across concurrent requests
@@ -114,7 +117,9 @@ export default async function handler(req: any, res: any) {
 		}
 
 		if (!shouldWait) {
-			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: op?.objectCount ? Number(op.objectCount) : undefined });
+			const oc = op?.objectCount ? Number(op.objectCount) : undefined;
+			console.log('[exact-order-count] immediate status=' + (op?.status || 'UNKNOWN') + (oc !== undefined ? ' objectCount=' + oc : ''));
+			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc });
 		}
 
 		// Poll for completion within timeout
@@ -126,6 +131,7 @@ export default async function handler(req: any, res: any) {
 			if (op && op.status === 'COMPLETED') {
 				const exact = Number(op.objectCount || 0);
 				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
+				console.log('[exact-order-count] status=COMPLETED source=poll exactOrders=' + exact);
 				return res.status(200).json({ status: op.status, exactOrders: exact });
 			}
 			if (op && (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED')) {
