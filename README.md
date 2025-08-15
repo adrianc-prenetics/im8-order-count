@@ -5,6 +5,7 @@ A minimal serverless endpoint that returns the total number of customer purchase
 ### API
 
 - Route: `api/total-orders.ts`
+
 - Response:
   - `{ totalOrders: number, precision?: "EXACT"|"LOW"|"HIGH" }`
 
