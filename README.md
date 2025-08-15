@@ -9,6 +9,19 @@ A minimal serverless endpoint that returns the total number of customer purchase
 - Response:
   - `{ totalOrders: number, precision?: "EXACT"|"LOW"|"HIGH" }`
 
+- Route: `api/total-sales.ts`
+- Response:
+  - `{ totalSales: number, currency: 'shop', method: string, pagesScanned: number, maxPages: number }`
+
+- Route: `api/exact-order-count.ts`
+- Query params:
+  - `wait=1` to wait for completion (default 0)
+  - `timeoutMs=30000` max 30000
+  - `query=` optional Admin search syntax filter
+- Response (wait=1 and completed):
+  - `{ status: "COMPLETED", exactOrders: number }`
+  - otherwise: `{ status, objectCount? }` while running
+
 ### Environment variables
 
 Create a `.env` with:
@@ -35,3 +48,5 @@ This is designed for Vercel serverless. You can deploy directly without a build 
 
 - Uses Shopify Admin GraphQL `ordersCount` as the primary, with deprecated REST `orders/count.json` as a fallback.
 - API version is pinned to `2025-07`.
+- `total-sales` paginates `orders` and sums `netPaymentSet.shopMoney.amount`. Default filter is `financial_status:paid`. Override via `?query=`.
+- `exact-order-count` uses GraphQL Bulk Operation and returns `objectCount` for exact counts on very large stores.
