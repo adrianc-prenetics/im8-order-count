@@ -18,12 +18,5 @@
   },
   "dependencies": {
     "@shopify/admin-api-client": "^1.1.1"
-  },
-  "vercel": {
-    "functions": {
-      "api/**/*": {
-        "runtime": "nodejs18.x"
-      }
-    }
   }
 }
