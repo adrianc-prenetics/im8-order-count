@@ -2,7 +2,7 @@ name: Refresh exact order count
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every 5 minutes
+    - cron: "*/2 * * * *" # temporarily every 2 minutes to verify scheduler
   workflow_dispatch:
 
 permissions:
