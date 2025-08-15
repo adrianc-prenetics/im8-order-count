@@ -9,10 +9,18 @@ const client = createAdminApiClient({
 	apiVersion: '2025-07',
 });
 
+// In-memory de-duplication and caching for hot lambdas (best-effort)
+let lastCompletedCache: { exactOrders: number; completedAt: string } | null = null;
+let startInFlight: Promise<void> | null = null;
+let lastStartTsMs = 0;
+const MIN_START_INTERVAL_MS = 60_000; // don't start more than once per minute by default
+
 export default async function handler(req: any, res: any) {
 	res.setHeader('Access-Control-Allow-Origin', '*');
 	res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
 	res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // Small CDN cache to protect against stampedes
+  res.setHeader('Cache-Control', 's-maxage=5, stale-while-revalidate=30');
 
 	if (req.method === 'OPTIONS') {
 		res.status(200).end();
@@ -29,6 +37,10 @@ export default async function handler(req: any, res: any) {
 	const maxWaitMs = Math.min(parseInt(String(req?.query?.timeoutMs || '18000'), 10) || 18000, 30000);
 	const force = String(req?.query?.force || '0') === '1';
 	const maxAgeMinutes = Math.min(parseInt(String(req?.query?.maxAgeMinutes || '60'), 10) || 60, 1440);
+	const minStartIntervalMs = Math.min(
+		parseInt(String(req?.query?.minStartIntervalMs || String(MIN_START_INTERVAL_MS)), 10) || MIN_START_INTERVAL_MS,
+		5 * 60_000,
+	);
 
 	try {
 		const CURRENT = `query { currentBulkOperation { id status type objectCount url partialDataUrl createdAt } }`;
@@ -55,10 +67,20 @@ export default async function handler(req: any, res: any) {
 			const ageMinutes = (Date.now() - createdAt.getTime()) / 60000;
 			const exact = Number(op.objectCount || 0);
 			if (!force && ageMinutes <= maxAgeMinutes) {
+				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
 				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
 			}
 		}
 
+		// If cache exists and is fresh enough, serve without hitting Shopify again
+		if (lastCompletedCache) {
+			const ageMinutes = (Date.now() - new Date(lastCompletedCache.completedAt).getTime()) / 60000;
+			if (!force && ageMinutes <= maxAgeMinutes) {
+				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, completedAt: lastCompletedCache.completedAt, ageMinutes });
+			}
+		}
+
+		const tooSoonToStart = Date.now() - lastStartTsMs < minStartIntervalMs;
 		if (
 			!op ||
 			op.status === 'CANCELED' ||
@@ -67,13 +89,28 @@ export default async function handler(req: any, res: any) {
 			op.status === 'IDLE' ||
 			(op.status === 'COMPLETED' && force)
 		) {
-			// Start a new bulk op that emits one line per order id
-			const started = await client.request(startBulkQuery);
-			const errs = started?.bulkOperationRunQuery?.userErrors;
-			if (errs && errs.length) {
-				return res.status(400).json({ error: 'Bulk start failed', errors: errs });
+			if (!force && tooSoonToStart) {
+				// Avoid starting again too soon; return current status
+				return res.status(202).json({ status: op?.status || 'PENDING', message: 'Start suppressed to protect rate limits; try again shortly.' });
 			}
-			op = started?.bulkOperationRunQuery?.bulkOperation || null;
+			// Start a new bulk op that emits one line per order id, de-duped across concurrent requests
+			if (!startInFlight) {
+				startInFlight = (async () => {
+					const started = await client.request(startBulkQuery);
+					const errs = started?.bulkOperationRunQuery?.userErrors;
+					if (errs && errs.length) {
+						throw new Error('Bulk start failed: ' + JSON.stringify(errs));
+					}
+					lastStartTsMs = Date.now();
+				})();
+			}
+			try {
+				await startInFlight;
+			} finally {
+				startInFlight = null;
+			}
+			({ data } = await client.request(CURRENT));
+			op = data?.currentBulkOperation || null;
 		}
 
 		if (!shouldWait) {
@@ -82,16 +119,19 @@ export default async function handler(req: any, res: any) {
 
 		// Poll for completion within timeout
 		const start = Date.now();
+		const basePollMs = 1400;
 		while (Date.now() - start < maxWaitMs) {
 			({ data } = await client.request(CURRENT));
 			op = data?.currentBulkOperation;
 			if (op && op.status === 'COMPLETED') {
-				return res.status(200).json({ status: op.status, exactOrders: Number(op.objectCount || 0) });
+				const exact = Number(op.objectCount || 0);
+				lastCompletedCache = { exactOrders: exact, completedAt: op.createdAt };
+				return res.status(200).json({ status: op.status, exactOrders: exact });
 			}
 			if (op && (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED')) {
 				return res.status(500).json({ status: op.status, error: 'Bulk operation did not complete successfully' });
 			}
-			await sleep(1200);
+			await sleep(basePollMs);
 		}
 
 		return res.status(202).json({ status: op?.status || 'PENDING', message: 'Still running, poll again or pass wait=1&timeoutMs=30000' });
