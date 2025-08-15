@@ -1,0 +1,29 @@
+{
+  "name": "im8-order-count",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev --yes",
+    "start": "node",
+    "lint": "echo 'no lints'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "description": "",
+  "private": "true",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@shopify/admin-api-client": "^1.1.1"
+  },
+  "vercel": {
+    "functions": {
+      "api/**/*": {
+        "runtime": "nodejs18.x"
+      }
+    }
+  }
+}
