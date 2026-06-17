@@ -15,6 +15,15 @@ let startInFlight: Promise<void> | null = null;
 let lastStartTsMs = 0;
 const MIN_START_INTERVAL_MS = 60_000; // don't start more than once per minute by default
 
+// Servings social-proof figure. Blended real average servings/order, calibrated
+// 2026-06-17: 48,321,733 real all-time servings / 949,714 orders = 50.88.
+// Accounts for the quarterly (90/180-day) pack mix via the average; grows
+// proportionally with order count. Re-calibrate if the product mix shifts materially.
+const SERVINGS_PER_ORDER = 50.88;
+function servingsFor(orders: number): number {
+	return Math.round(orders * SERVINGS_PER_ORDER);
+}
+
 export default async function handler(req: any, res: any) {
 	res.setHeader('Access-Control-Allow-Origin', '*');
 	res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -71,10 +80,11 @@ export default async function handler(req: any, res: any) {
 				console.log('[exact-order-count] status=COMPLETED source=currentBulkOperation exactOrders=' + exact + ' ageMinutes=' + ageMinutes.toFixed(2));
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(exact));
+				res.setHeader('X-Exact-Servings', String(servingsFor(exact)));
 				res.setHeader('X-Exact-Source', 'currentBulkOperation');
 				res.setHeader('X-Exact-Completed-At', op.createdAt);
 				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
-				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt, ageMinutes });
+				return res.status(200).json({ status: op.status, exactOrders: exact, exactServings: servingsFor(exact), completedAt: op.createdAt, ageMinutes });
 			}
 		}
 
@@ -85,10 +95,11 @@ export default async function handler(req: any, res: any) {
 				console.log('[exact-order-count] status=COMPLETED source=memory-cache exactOrders=' + lastCompletedCache.exactOrders + ' ageMinutes=' + ageMinutes.toFixed(2));
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(lastCompletedCache.exactOrders));
+				res.setHeader('X-Exact-Servings', String(servingsFor(lastCompletedCache.exactOrders)));
 				res.setHeader('X-Exact-Source', 'memory-cache');
 				res.setHeader('X-Exact-Completed-At', lastCompletedCache.completedAt);
 				res.setHeader('Server-Timing', `exact;desc="${lastCompletedCache.exactOrders}"`);
-				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, completedAt: lastCompletedCache.completedAt, ageMinutes });
+				return res.status(200).json({ status: 'COMPLETED', exactOrders: lastCompletedCache.exactOrders, exactServings: servingsFor(lastCompletedCache.exactOrders), completedAt: lastCompletedCache.completedAt, ageMinutes });
 			}
 		}
 
@@ -131,13 +142,14 @@ export default async function handler(req: any, res: any) {
 			console.log('[exact-order-count] immediate status=' + (op?.status || 'UNKNOWN') + (oc !== undefined ? ' objectCount=' + oc : ''));
 			if (oc !== undefined) {
 				res.setHeader('X-Exact-Orders', String(oc));
+				res.setHeader('X-Exact-Servings', String(servingsFor(oc)));
 				res.setHeader('X-Exact-Status', op?.status || 'UNKNOWN');
 				res.setHeader('X-Exact-Source', 'currentBulkOperation');
 				if (op?.status === 'COMPLETED' && op?.createdAt) {
 					res.setHeader('X-Exact-Completed-At', op.createdAt);
 				}
 			}
-			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc, completedAt: op?.createdAt });
+			return res.status(200).json({ status: op?.status || 'UNKNOWN', objectCount: oc, exactServings: oc !== undefined ? servingsFor(oc) : undefined, completedAt: op?.createdAt });
 		}
 
 		// Poll for completion within timeout
@@ -152,10 +164,11 @@ export default async function handler(req: any, res: any) {
 				console.log('[exact-order-count] status=COMPLETED source=poll exactOrders=' + exact);
 				res.setHeader('X-Exact-Status', 'COMPLETED');
 				res.setHeader('X-Exact-Orders', String(exact));
+				res.setHeader('X-Exact-Servings', String(servingsFor(exact)));
 				res.setHeader('X-Exact-Source', 'poll');
 				res.setHeader('X-Exact-Completed-At', op.createdAt);
 				res.setHeader('Server-Timing', `exact;desc="${exact}"`);
-				return res.status(200).json({ status: op.status, exactOrders: exact, completedAt: op.createdAt });
+				return res.status(200).json({ status: op.status, exactOrders: exact, exactServings: servingsFor(exact), completedAt: op.createdAt });
 			}
 			if (op && (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED')) {
 				return res.status(500).json({ status: op.status, error: 'Bulk operation did not complete successfully' });
