@@ -41,23 +41,6 @@ export default async function handler(req: any, res: any) {
 		return;
 	}
 
-	// One-time admin: cancel an in-flight bulk operation (drains a stale op).
-	if (String(req?.query?.cancel || '0') === '1') {
-		const probe = await client.request<{ currentBulkOperation: { id: string; status: string } | null }>(
-			'query { currentBulkOperation { id status } }',
-		);
-		const cur = probe?.data?.currentBulkOperation ?? null;
-		if (cur && (cur.status === 'RUNNING' || cur.status === 'CREATED')) {
-			const cancelRes = await client.request<{ bulkOperationCancel: { userErrors: Array<{ message: string }> } }>(
-				`mutation { bulkOperationCancel(id: "${cur.id}") { bulkOperation { id status } userErrors { message } } }`,
-			);
-			res.status(200).json({ cancelled: cur.id, prevStatus: cur.status, errors: cancelRes?.data?.bulkOperationCancel?.userErrors ?? [] });
-			return;
-		}
-		res.status(200).json({ cancelled: null, currentStatus: cur?.status ?? 'NONE' });
-		return;
-	}
-
 	const queryFilter = typeof req?.query?.query === 'string' ? req.query.query : undefined;
 	const shouldWait = String(req?.query?.wait || '0') === '1';
 	const maxWaitMs = Math.min(parseInt(String(req?.query?.timeoutMs || '18000'), 10) || 18000, 30000);
